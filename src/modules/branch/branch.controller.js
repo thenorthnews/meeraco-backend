@@ -1,11 +1,24 @@
-import { ok, created, badRequest, notFound, serverError } from '../../helpers/response.helper.js';
+import { ok, created, badRequest, notFound, serverError, paginated } from '../../helpers/response.helper.js';
 import * as branchService from './branch.service.js';
 import { createBranchSchema } from './branch.validation.js';
 
 export const getBranches = async (req, res) => {
   try {
-    const branches = await branchService.fetchBranches();
-    return ok(res, 'Branches fetched successfully', branches);
+    const { search, q, active, state, page = 1, limit = 10 } = req.query;
+    const result = await branchService.fetchBranches({
+      search: search || q,
+      active,
+      state,
+      page,
+      limit
+    });
+    return paginated(res, {
+      items: result.branches,
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+      message: 'Branches fetched successfully'
+    });
   } catch (error) {
     return serverError(res, 'Failed to fetch branches', error);
   }

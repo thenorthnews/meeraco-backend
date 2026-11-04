@@ -7,11 +7,58 @@ const DEFAULT_TERRITORIES = {
   BLR: [{ state: 'Karnataka', districts: ['Bangalore Urban', 'Bangalore Rural'] }]
 };
 
-export const fetchBranches = async () => {
-  let branches = await Branch.find().sort({ name: 1 }).lean();
+export const fetchBranches = async ({ search, q, active, state, page = 1, limit = 10 } = {}) => {
+  const pageNum = Math.max(1, Number(page) || 1);
+  const limitNum = Math.max(1, Number(limit) || 10);
+  const skip = (pageNum - 1) * limitNum;
 
-  // If no branches exist in MongoDB yet, automatically seed them
-  if (!branches || branches.length === 0) {
+  // Build dynamic MongoDB query using $and to prevent condition overwriting
+  const conditions = [];
+
+  if (typeof active !== 'undefined' && active !== '' && active !== 'all' && active !== null) {
+    const isActive = String(active).toLowerCase() === 'true' || active === true;
+    if (isActive) {
+      conditions.push({
+        $or: [
+          { active: true },
+          { active: 'true' },
+          { active: { $exists: false } },
+          { active: null }
+        ]
+      });
+    } else {
+      conditions.push({
+        $or: [
+          { active: false },
+          { active: 'false' }
+        ]
+      });
+    }
+  }
+
+  if (state && state !== 'all') {
+    conditions.push({ state });
+  }
+
+  const searchTerm = (search || q || '').trim();
+  if (searchTerm) {
+    conditions.push({
+      $or: [
+        { name: { $regex: searchTerm, $options: 'i' } },
+        { code: { $regex: searchTerm, $options: 'i' } },
+        { city: { $regex: searchTerm, $options: 'i' } },
+        { state: { $regex: searchTerm, $options: 'i' } },
+        { gstin: { $regex: searchTerm, $options: 'i' } },
+        { 'territories.districts': { $regex: searchTerm, $options: 'i' } }
+      ]
+    });
+  }
+
+  const query = conditions.length > 0 ? { $and: conditions } : {};
+
+  // Count existing branches in MongoDB to seed initial standard branches if empty
+  const existingCount = await Branch.countDocuments();
+  if (existingCount === 0) {
     const initialBranches = [
       {
         name: 'Delhi NCR',
@@ -60,15 +107,25 @@ export const fetchBranches = async () => {
 
     try {
       await Branch.insertMany(initialBranches);
-      branches = await Branch.find().sort({ name: 1 }).lean();
     } catch (e) {
       console.warn('Initial branch insertion note:', e.message);
     }
   }
 
-  const [users, superAdmins] = await Promise.all([
+  // Count total matching branches in MongoDB
+  const total = await Branch.countDocuments(query);
+
+  // Fetch paginated branches from MongoDB
+  const branches = await Branch.find(query)
+    .sort({ name: 1 })
+    .skip(skip)
+    .limit(limitNum)
+    .lean();
+
+  const [users, superAdmins, allBranchesForLookup] = await Promise.all([
     User.find().select('branchId active name email roleId').lean(),
-    SuperAdmin.find().select('name email').lean()
+    SuperAdmin.find().select('name email').lean(),
+    Branch.find().select('_id code name').lean()
   ]);
 
   // Backfill territories for any branch if empty
@@ -76,17 +133,17 @@ export const fetchBranches = async () => {
     if (!b.territories || b.territories.length === 0) {
       if (DEFAULT_TERRITORIES[b.code]) {
         b.territories = DEFAULT_TERRITORIES[b.code];
-        await Branch.findByIdAndUpdate(b._id, { $set: { territories: b.territories } });
+        Branch.findByIdAndUpdate(b._id, { $set: { territories: b.territories } }).catch(() => {});
       } else if (b.state) {
         b.territories = [{ state: b.state, districts: [b.city || b.state] }];
-        await Branch.findByIdAndUpdate(b._id, { $set: { territories: b.territories } });
+        Branch.findByIdAndUpdate(b._id, { $set: { territories: b.territories } }).catch(() => {});
       }
     }
   }
 
   // Build branch lookup map for code & legacy ID resolution
   const branchLookup = new Map();
-  branches.forEach(b => {
+  allBranchesForLookup.forEach(b => {
     const idStr = b._id.toString();
     branchLookup.set(idStr, idStr);
     branchLookup.set(b.code.toUpperCase(), idStr);
@@ -124,7 +181,7 @@ export const fetchBranches = async () => {
     managerNameMap.set('super_admin', sa.name);
   });
 
-  return branches.map(b => {
+  const mappedBranches = branches.map(b => {
     const idStr = b._id.toString();
     const mgrId = b.managerId ? b.managerId.toString() : null;
     return {
@@ -144,6 +201,14 @@ export const fetchBranches = async () => {
       active: b.active !== false
     };
   });
+
+  return {
+    branches: mappedBranches,
+    total,
+    page: pageNum,
+    limit: limitNum,
+    totalPages: Math.ceil(total / limitNum) || 1
+  };
 };
 
 export const fetchBranchById = async (id) => {

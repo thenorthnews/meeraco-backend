@@ -10,8 +10,8 @@ router.use(authenticate);
 router.get('/', checkPermission('branches', 'view'), getBranches);
 router.post('/', checkPermission('branches', 'create'), createBranch);
 router.get('/:id', checkPermission('branches', 'view'), getBranchById);
-router.put('/:id', checkPermission('branches', 'edit'), updateBranch);
 router.put('/:id/status', checkPermission('branches', 'edit'), setBranchStatus);
-router.delete('/:id', checkPermission('branches', 'edit'), deleteBranch);
+router.put('/:id', checkPermission('branches', 'edit'), updateBranch);
+router.delete('/:id', checkPermission('branches', 'delete'), deleteBranch);
 
 export default router;
