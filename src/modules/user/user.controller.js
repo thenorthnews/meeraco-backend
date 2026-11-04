@@ -82,3 +82,20 @@ export const setUserActiveStatus = async (req, res) => {
     return serverError(res, 'Failed to change user status', error);
   }
 };
+
+export const deleteUser = async (req, res) => {
+  try {
+    const { error: paramErr } = idParamSchema.validate(req.params, { abortEarly: false });
+    if (paramErr) {
+      return badRequest(res, paramErr.details.map(d => d.message).join(', '));
+    }
+
+    const currentUserId = req.user?.id || req.user?._id;
+    const result = await userService.removeUser(req.params.id, currentUserId);
+    return ok(res, `User '${result.name}' deleted successfully`, result);
+  } catch (error) {
+    if (error.statusCode === 400) return badRequest(res, error.message);
+    if (error.statusCode === 404) return notFound(res, error.message);
+    return serverError(res, 'Failed to delete user', error);
+  }
+};

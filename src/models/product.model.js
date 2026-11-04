@@ -30,7 +30,9 @@ productSchema.pre('save', function (next) {
   } else if (this.basePrice && !this.price) {
     this.price = this.basePrice;
   }
-  next();
+  if (typeof next === 'function') {
+    return next();
+  }
 });
 
 const Product = mongoose.models.Product || mongoose.model('Product', productSchema);

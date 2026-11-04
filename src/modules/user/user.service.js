@@ -290,3 +290,31 @@ export const changeUserStatus = async (id, active, reassignToUserId) => {
 
   return updated;
 };
+
+export const removeUser = async (id, currentUserId) => {
+  if (currentUserId && String(id) === String(currentUserId)) {
+    const error = new Error('You cannot delete your own account.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const existing = await User.findById(id);
+  if (!existing) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  // Prevent deleting superadmin / owner
+  if (existing.email === 'owner@meeraco.demo') {
+    const error = new Error('Super admin / owner account cannot be deleted.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Unset managerId for anyone reporting to this user
+  await User.updateMany({ managerId: id }, { $set: { managerId: null } });
+
+  await User.findByIdAndDelete(id);
+  return { id, name: existing.name };
+};

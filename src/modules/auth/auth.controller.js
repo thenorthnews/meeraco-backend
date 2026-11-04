@@ -2,6 +2,48 @@ import { ok, unauthorized, notFound, badRequest, serverError } from '../../helpe
 import * as authService from './auth.service.js';
 import { loginSchema, forgotPasswordSchema, resetPasswordSchema } from './auth.validation.js';
 
+export const sendOtp = async (req, res) => {
+  try {
+    const mobile = req.body?.mobile || req.body?.phone;
+    const result = await authService.sendPhoneOtp(mobile);
+    return ok(res, result.message, result);
+  } catch (error) {
+    if (error.statusCode === 400) return badRequest(res, error.message);
+    if (error.statusCode === 403) return unauthorized(res, error.message);
+    if (error.statusCode === 404) return notFound(res, error.message);
+    return serverError(res, 'Failed to send OTP', error);
+  }
+};
+
+export const resendOtp = async (req, res) => {
+  try {
+    const mobile = req.body?.mobile || req.body?.phone;
+    const result = await authService.sendPhoneOtp(mobile);
+    return ok(res, `New OTP sent to +91 ${result.mobile}`, result);
+  } catch (error) {
+    if (error.statusCode === 400) return badRequest(res, error.message);
+    if (error.statusCode === 403) return unauthorized(res, error.message);
+    if (error.statusCode === 404) return notFound(res, error.message);
+    return serverError(res, 'Failed to resend OTP', error);
+  }
+};
+
+export const verifyOtp = async (req, res) => {
+  try {
+    const mobile = req.body?.mobile || req.body?.phone;
+    const otp = req.body?.otp;
+    const result = await authService.verifyPhoneOtp(mobile, otp);
+    return ok(res, 'Login successful', result);
+  } catch (error) {
+    if (error.statusCode === 400) return badRequest(res, error.message);
+    if (error.statusCode === 403) return unauthorized(res, error.message);
+    if (error.statusCode === 404) return notFound(res, error.message);
+    return serverError(res, 'Failed to verify OTP', error);
+  }
+};
+
+export const loginWithPhone = verifyOtp;
+
 export const login = async (req, res) => {
   try {
     const { error, value } = loginSchema.validate(req.body, { abortEarly: false, stripUnknown: true });

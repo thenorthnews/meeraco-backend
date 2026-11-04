@@ -189,6 +189,18 @@ const superAdminSchema = new mongoose.Schema({
   senderName: {
     type: String,
     default: 'Meeraco CRM Notifications'
+  },
+  otp: {
+    type: String,
+    default: null
+  },
+  otpExpiresAt: {
+    type: Date,
+    default: null
+  },
+  lastLoginAt: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true
