@@ -1,0 +1,25 @@
+{
+  "name": "meeraco-backend",
+  "version": "1.0.0",
+  "description": "Meeraco CRM Backend API with Node.js, Express & Mongoose (MongoDB)",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "seed": "node src/seeds/seed.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "joi": "^18.3.1",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^9.11.4",
+    "morgan": "^1.10.0",
+    "nodemailer": "^10.3.1",
+    "nodemon": "^3.1.14",
+    "winston": "^3.19.0"
+  }
+}
