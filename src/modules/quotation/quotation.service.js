@@ -99,7 +99,7 @@ export const createNewQuotation = async (data, creatorId) => {
 export const updateQuotationStatus = async (id, { status, reason }) => {
   const quote = await Quotation.findByIdAndUpdate(
     id,
-    { $set: { status, rejectedReason: reason || null } },
+    { $set: { status, rejectionReason: reason || null } },
     { new: true }
   );
 
@@ -113,4 +113,8 @@ export const updateQuotationStatus = async (id, { status, reason }) => {
     id: quote._id.toString(),
     status: quote.status
   };
+};
+
+export const changeQuotationStatus = async (id, status, reason) => {
+  return await updateQuotationStatus(id, { status, reason });
 };

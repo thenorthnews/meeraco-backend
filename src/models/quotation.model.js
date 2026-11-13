@@ -1,12 +1,17 @@
 import mongoose from 'mongoose';
 
+const sanitizeObjectId = v => (v && /^[0-9a-fA-F]{24}$/.test(String(v?._id || v?.id || v))) ? v : null;
+
 const quotationSchema = new mongoose.Schema({
   quoteNumber: { type: String, required: true },
   revision: { type: Number, default: 0 },
-  leadId: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', default: null },
-  customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null },
-  branchId: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch', default: null },
-  createdById: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  leadId: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', default: null, set: sanitizeObjectId },
+  customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null, set: sanitizeObjectId },
+  branchId: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch', default: null, set: sanitizeObjectId },
+  createdById: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, set: sanitizeObjectId },
+  approvedById: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, set: sanitizeObjectId },
+  approvalStatus: { type: String, default: 'Pending' },
+  rejectionReason: { type: String, default: '' },
   subtotal: { type: Number, default: 0 },
   discountTotal: { type: Number, default: 0 },
   cgst: { type: Number, default: 0 },

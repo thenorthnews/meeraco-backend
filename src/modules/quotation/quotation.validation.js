@@ -33,8 +33,8 @@ export const createQuotationSchema = Joi.object({
 });
 
 export const updateQuotationStatusSchema = Joi.object({
-  status: Joi.string().valid('Draft', 'Sent', 'Approved', 'Rejected', 'Expired').required().messages({
-    'any.only': 'Status must be one of Draft, Sent, Approved, Rejected, Expired',
+  status: Joi.string().valid('Draft', 'Pending Approval', 'Approved', 'Sent', 'Accepted', 'Rejected', 'Expired').required().messages({
+    'any.only': 'Status must be one of Draft, Pending Approval, Approved, Sent, Accepted, Rejected, Expired',
     'any.required': 'Status is required'
   }),
   notes: Joi.string().allow('', null)
