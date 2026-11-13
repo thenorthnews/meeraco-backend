@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { ok, badRequest, serverError, paginated } from '../../helpers/response.helper.js';
+import { ok, created, badRequest, serverError, paginated } from '../../helpers/response.helper.js';
 import * as settingsService from './settings.service.js';
 import { updateGeneralSettingsSchema } from './settings.validation.js';
 import { paginationQuerySchema } from '../../validations/common.validation.js';
@@ -107,12 +107,106 @@ export const getLeadMasters = async (req, res) => {
   }
 };
 
+export const createLeadMaster = async (req, res) => {
+  try {
+    const createdDoc = await settingsService.createLeadMaster(req.body);
+    return created(res, `'${createdDoc.name}' added successfully`, createdDoc);
+  } catch (error) {
+    if (error.statusCode === 400 || error.statusCode === 409) {
+      return badRequest(res, error.message);
+    }
+    return serverError(res, 'Failed to create lead master', error);
+  }
+};
+
+export const updateLeadMaster = async (req, res) => {
+  try {
+    const updated = await settingsService.updateLeadMaster(req.params.id, req.body);
+    return ok(res, `'${updated.name}' updated successfully`, updated);
+  } catch (error) {
+    if (error.statusCode === 404) return badRequest(res, error.message);
+    return serverError(res, 'Failed to update lead master', error);
+  }
+};
+
+export const reorderLeadMasters = async (req, res) => {
+  try {
+    const result = await settingsService.reorderLeadMasters(req.body);
+    return ok(res, 'Order updated successfully', result);
+  } catch (error) {
+    return serverError(res, 'Failed to reorder lead masters', error);
+  }
+};
+
+export const deleteLeadMaster = async (req, res) => {
+  try {
+    const result = await settingsService.removeLeadMaster(req.params.id);
+    return ok(res, `'${result.name}' deleted successfully`, result);
+  } catch (error) {
+    if (error.statusCode === 403 || error.statusCode === 404) {
+      return badRequest(res, error.message);
+    }
+    return serverError(res, 'Failed to delete lead master', error);
+  }
+};
+
 export const getAssignmentRules = async (req, res) => {
   try {
     const rules = await settingsService.fetchAssignmentRules();
     return ok(res, 'Assignment rules fetched successfully', rules);
   } catch (error) {
     return serverError(res, 'Failed to fetch assignment rules', error);
+  }
+};
+
+export const createAssignmentRule = async (req, res) => {
+  try {
+    const createdRule = await settingsService.createAssignmentRule(req.body);
+    return created(res, `Assignment rule '${createdRule.name}' created successfully`, createdRule);
+  } catch (error) {
+    if (error.statusCode === 400) return badRequest(res, error.message);
+    return serverError(res, 'Failed to create assignment rule', error);
+  }
+};
+
+export const updateAssignmentRule = async (req, res) => {
+  try {
+    const updated = await settingsService.updateAssignmentRule(req.params.id, req.body);
+    return ok(res, `Assignment rule '${updated.name}' updated successfully`, updated);
+  } catch (error) {
+    if (error.statusCode === 404) return badRequest(res, error.message);
+    return serverError(res, 'Failed to update assignment rule', error);
+  }
+};
+
+export const setAssignmentRuleStatus = async (req, res) => {
+  try {
+    const { active } = req.body;
+    const updated = await settingsService.changeAssignmentRuleStatus(req.params.id, active);
+    return ok(res, `Assignment rule '${updated.name}' is now ${active ? 'enabled' : 'disabled'}`, updated);
+  } catch (error) {
+    if (error.statusCode === 404) return badRequest(res, error.message);
+    return serverError(res, 'Failed to update assignment rule status', error);
+  }
+};
+
+export const reorderAssignmentRules = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    const result = await settingsService.reorderAssignmentRules(ids);
+    return ok(res, 'Assignment rules reordered successfully', result);
+  } catch (error) {
+    return serverError(res, 'Failed to reorder assignment rules', error);
+  }
+};
+
+export const deleteAssignmentRule = async (req, res) => {
+  try {
+    const result = await settingsService.removeAssignmentRule(req.params.id);
+    return ok(res, `Assignment rule '${result.name}' deleted successfully`, result);
+  } catch (error) {
+    if (error.statusCode === 404) return badRequest(res, error.message);
+    return serverError(res, 'Failed to delete assignment rule', error);
   }
 };
 

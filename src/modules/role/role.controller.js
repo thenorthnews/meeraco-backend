@@ -1,6 +1,7 @@
 import { ok, created, badRequest, notFound, serverError } from '../../helpers/response.helper.js';
 import * as roleService from './role.service.js';
 import { createRoleSchema, updateRoleSchema, updatePermissionSchema } from './role.validation.js';
+import { emitRolePermissionsUpdated } from '../../socket/socket.js';
 
 export const getRoles = async (req, res) => {
   try {
@@ -44,6 +45,7 @@ export const updateRole = async (req, res) => {
     }
 
     const updated = await roleService.updateRole(req.params.id, value);
+    emitRolePermissionsUpdated(updated);
     return ok(res, 'Role updated successfully', updated);
   } catch (error) {
     if (error.statusCode === 400) return badRequest(res, error.message);
@@ -60,6 +62,7 @@ export const setRolePermission = async (req, res) => {
     }
 
     const updated = await roleService.updateRolePermission(req.params.id, value);
+    emitRolePermissionsUpdated(updated);
     return ok(res, 'Role permission updated successfully', updated);
   } catch (error) {
     if (error.statusCode === 400) return badRequest(res, error.message);

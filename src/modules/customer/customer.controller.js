@@ -1,19 +1,14 @@
 import { ok, created, badRequest, notFound, serverError, paginated } from '../../helpers/response.helper.js';
 import * as customerService from './customer.service.js';
-import { createCustomerSchema, addContactSchema } from './customer.validation.js';
-import { paginationQuerySchema, idParamSchema } from '../../validations/common.validation.js';
+import { createCustomerSchema, updateCustomerSchema, addContactSchema } from './customer.validation.js';
 
 export const getCustomers = async (req, res) => {
   try {
-    const { error: queryErr } = paginationQuerySchema.validate(req.query, { abortEarly: false, stripUnknown: false });
-    if (queryErr) {
-      return badRequest(res, queryErr.details.map(d => d.message).join(', '));
-    }
-
-    const { search, branchId, page = 1, limit = 50 } = req.query;
+    const { search, branchId, status, page = 1, limit = 10 } = req.query;
     const result = await customerService.fetchCustomers({
       search,
       branchId,
+      status,
       page,
       limit,
       user: req.user
@@ -22,8 +17,9 @@ export const getCustomers = async (req, res) => {
     return paginated(res, {
       items: result.customers,
       total: result.total,
-      page: result.pageNum,
-      limit: result.limitNum,
+      page: result.page,
+      limit: result.limit,
+      totalPages: result.totalPages,
       message: 'Customers fetched successfully'
     });
   } catch (error) {
@@ -33,11 +29,6 @@ export const getCustomers = async (req, res) => {
 
 export const getCustomerById = async (req, res) => {
   try {
-    const { error: paramErr } = idParamSchema.validate(req.params, { abortEarly: false });
-    if (paramErr) {
-      return badRequest(res, paramErr.details.map(d => d.message).join(', '));
-    }
-
     const customer = await customerService.fetchCustomerById(req.params.id);
     return ok(res, 'Customer details fetched successfully', customer);
   } catch (error) {
@@ -60,16 +51,36 @@ export const createCustomer = async (req, res) => {
   }
 };
 
-export const addCustomerContact = async (req, res) => {
+export const updateCustomer = async (req, res) => {
   try {
-    const { error: paramErr } = idParamSchema.validate(req.params, { abortEarly: false });
-    if (paramErr) {
-      return badRequest(res, paramErr.details.map(d => d.message).join(', '));
+    const { error, value } = updateCustomerSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+    if (error) {
+      return badRequest(res, error.details.map(d => d.message).join(', '));
     }
 
-    const { error: bodyErr, value } = addContactSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
-    if (bodyErr) {
-      return badRequest(res, bodyErr.details.map(d => d.message).join(', '));
+    const updated = await customerService.updateExistingCustomer(req.params.id, value, req.user);
+    return ok(res, 'Customer updated successfully', updated);
+  } catch (error) {
+    if (error.statusCode === 404) return notFound(res, error.message);
+    return serverError(res, 'Failed to update customer', error);
+  }
+};
+
+export const deleteCustomer = async (req, res) => {
+  try {
+    const result = await customerService.deleteExistingCustomer(req.params.id, req.user);
+    return ok(res, 'Customer deleted successfully', result);
+  } catch (error) {
+    if (error.statusCode === 404) return notFound(res, error.message);
+    return serverError(res, 'Failed to delete customer', error);
+  }
+};
+
+export const addCustomerContact = async (req, res) => {
+  try {
+    const { error, value } = addContactSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+    if (error) {
+      return badRequest(res, error.details.map(d => d.message).join(', '));
     }
 
     const contact = await customerService.createContact(req.params.id, value);

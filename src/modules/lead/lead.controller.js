@@ -1,20 +1,18 @@
 import { ok, created, badRequest, notFound, forbidden, serverError, paginated } from '../../helpers/response.helper.js';
 import * as leadService from './lead.service.js';
-import { createLeadSchema, updateLeadStageSchema, reassignLeadSchema } from './lead.validation.js';
-import { paginationQuerySchema, idParamSchema } from '../../validations/common.validation.js';
+import { createLeadSchema, updateLeadSchema, updateLeadStageSchema, reassignLeadSchema } from './lead.validation.js';
+import { idParamSchema } from '../../validations/common.validation.js';
+import { emitLeadCreated, emitLeadUpdated } from '../../socket/socket.js';
 
 export const getLeads = async (req, res) => {
   try {
-    const { error: queryErr } = paginationQuerySchema.validate(req.query, { abortEarly: false, stripUnknown: false });
-    if (queryErr) {
-      return badRequest(res, queryErr.details.map(d => d.message).join(', '));
-    }
-
-    const { stage, branchId, assignedToId, search, page = 1, limit = 50 } = req.query;
+    const { stage, source, priority, branchId, date, search, page = 1, limit = 20 } = req.query;
     const result = await leadService.fetchLeads({
       stage,
+      source,
+      priority,
       branchId,
-      assignedToId,
+      date,
       search,
       page,
       limit,
@@ -24,8 +22,9 @@ export const getLeads = async (req, res) => {
     return paginated(res, {
       items: result.leads,
       total: result.total,
-      page: result.pageNum,
-      limit: result.limitNum,
+      page: result.page,
+      limit: result.limit,
+      totalPages: result.totalPages,
       message: 'Leads fetched successfully'
     });
   } catch (error) {
@@ -49,6 +48,20 @@ export const getLeadById = async (req, res) => {
   }
 };
 
+export const getLeadActivities = async (req, res) => {
+  try {
+    const { error: paramErr } = idParamSchema.validate(req.params, { abortEarly: false });
+    if (paramErr) {
+      return badRequest(res, paramErr.details.map(d => d.message).join(', '));
+    }
+
+    const activities = await leadService.fetchLeadActivities(req.params.id);
+    return ok(res, 'Lead activities fetched successfully', activities);
+  } catch (error) {
+    return serverError(res, 'Failed to fetch lead activities', error);
+  }
+};
+
 export const createLead = async (req, res) => {
   try {
     const { error, value } = createLeadSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
@@ -57,10 +70,32 @@ export const createLead = async (req, res) => {
     }
 
     const lead = await leadService.createNewLead(value, req.user);
-    return created(res, 'Lead created and routed successfully', lead);
+    emitLeadCreated(lead);
+    return created(res, 'Lead created successfully', lead);
   } catch (error) {
     if (error.statusCode === 400) return badRequest(res, error.message);
     return serverError(res, 'Failed to create lead', error);
+  }
+};
+
+export const updateLead = async (req, res) => {
+  try {
+    const { error: paramErr } = idParamSchema.validate(req.params, { abortEarly: false });
+    if (paramErr) {
+      return badRequest(res, paramErr.details.map(d => d.message).join(', '));
+    }
+
+    const { error, value } = updateLeadSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+    if (error) {
+      return badRequest(res, error.details.map(d => d.message).join(', '));
+    }
+
+    const updated = await leadService.updateLeadDetails(req.params.id, value, req.user);
+    emitLeadUpdated(updated);
+    return ok(res, 'Lead updated successfully', updated);
+  } catch (error) {
+    if (error.statusCode === 404) return notFound(res, error.message);
+    return serverError(res, 'Failed to update lead', error);
   }
 };
 
@@ -77,6 +112,7 @@ export const updateLeadStage = async (req, res) => {
     }
 
     const updated = await leadService.updateStage(req.params.id, value, req.user);
+    emitLeadUpdated(updated);
     return ok(res, `Lead stage updated to '${value.stage}'`, updated);
   } catch (error) {
     if (error.statusCode === 404) return notFound(res, error.message);
@@ -97,10 +133,26 @@ export const reassignLead = async (req, res) => {
     }
 
     const updated = await leadService.reassign(req.params.id, value, req.user);
+    emitLeadUpdated(updated);
     return ok(res, 'Lead reassigned successfully', updated);
   } catch (error) {
-    if (error.statusCode === 400) return badRequest(res, error.message);
     if (error.statusCode === 404) return notFound(res, error.message);
+    if (error.statusCode === 400) return badRequest(res, error.message);
     return serverError(res, 'Failed to reassign lead', error);
+  }
+};
+
+export const deleteLead = async (req, res) => {
+  try {
+    const { error: paramErr } = idParamSchema.validate(req.params, { abortEarly: false });
+    if (paramErr) {
+      return badRequest(res, paramErr.details.map(d => d.message).join(', '));
+    }
+
+    const result = await leadService.deleteLead(req.params.id, req.user);
+    return ok(res, 'Lead deleted successfully', result);
+  } catch (error) {
+    if (error.statusCode === 404) return notFound(res, error.message);
+    return serverError(res, 'Failed to delete lead', error);
   }
 };

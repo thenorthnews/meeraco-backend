@@ -8,6 +8,7 @@ import quotationRoutes from '../modules/quotation/quotation.routes.js';
 import productRoutes from '../modules/product/product.routes.js';
 import roleRoutes from '../modules/role/role.routes.js';
 import settingsRoutes from '../modules/settings/settings.routes.js';
+import dashboardRoutes from '../modules/dashboard/dashboard.routes.js';
 
 const router = Router();
 
@@ -20,6 +21,7 @@ router.get('/health', (req, res) => {
   });
 });
 
+router.use('/dashboard', dashboardRoutes);
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/branches', branchRoutes);

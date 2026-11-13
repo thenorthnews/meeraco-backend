@@ -1,10 +1,7 @@
 import Joi from 'joi';
 
 export const createBranchSchema = Joi.object({
-  code: Joi.string().trim().uppercase().min(2).max(10).required().messages({
-    'string.empty': 'Branch code is required (e.g., DEL, MUM)',
-    'any.required': 'Branch code is required'
-  }),
+  code: Joi.string().trim().uppercase().allow('', null).optional(),
   name: Joi.string().trim().min(2).max(100).required().messages({
     'string.empty': 'Branch name is required',
     'any.required': 'Branch name is required'

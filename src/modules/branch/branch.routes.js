@@ -7,11 +7,11 @@ const router = Router();
 
 router.use(authenticate);
 
-router.get('/', checkPermission('branches', 'view'), getBranches);
-router.post('/', checkPermission('branches', 'create'), createBranch);
-router.get('/:id', checkPermission('branches', 'view'), getBranchById);
-router.put('/:id/status', checkPermission('branches', 'edit'), setBranchStatus);
-router.put('/:id', checkPermission('branches', 'edit'), updateBranch);
-router.delete('/:id', checkPermission('branches', 'delete'), deleteBranch);
+router.get('/', getBranches);
+router.post('/', createBranch);
+router.get('/:id', getBranchById);
+router.put('/:id/status', setBranchStatus);
+router.put('/:id', updateBranch);
+router.delete('/:id', deleteBranch);
 
 export default router;

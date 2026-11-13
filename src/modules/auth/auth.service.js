@@ -131,20 +131,21 @@ export const verifyPhoneOtp = async (rawPhone, otp) => {
     throw error;
   }
 
-  // 3. 🗑️ Delete / Clear OTP from MongoDB upon successful verification
+  // 3. 🗑️ Delete / Clear OTP from MongoDB upon successful verification & record lastLoginAt
+  const loginDate = new Date();
   if (isSuperAdmin) {
     await SuperAdmin.findByIdAndUpdate(user._id, {
-      $set: { otp: null, otpExpiresAt: null, lastLoginAt: new Date() }
+      $set: { otp: null, otpExpiresAt: null, lastLoginAt: loginDate }
     });
   } else {
     await User.findByIdAndUpdate(user._id, {
-      $set: { otp: null, otpExpiresAt: null, lastLoginAt: new Date() }
+      $set: { otp: null, otpExpiresAt: null, lastLoginAt: loginDate }
     });
   }
 
   logger.info(`[OTP VERIFIED & DELETED FROM DB] Mobile: +91 ${cleanPhone} | User: ${user.name}`);
 
-  const roleName = isSuperAdmin ? 'Super Admin' : (user.roleId?.name || 'User');
+  const roleName = isSuperAdmin ? 'Admin' : (user.roleId?.name || 'User');
   const userId = user._id.toString();
 
   const token = jwt.sign(
@@ -168,8 +169,10 @@ export const verifyPhoneOtp = async (rawPhone, otp) => {
       email: user.email,
       mobile: user.mobile,
       role: roleName,
-      roleId: isSuperAdmin ? 'super_admin' : user.roleId?._id?.toString(),
-      branch: user.branchId ? { id: user.branchId._id, name: user.branchId.name, code: user.branchId.code } : null
+      roleId: isSuperAdmin ? 'admin' : user.roleId?._id?.toString(),
+      branch: user.branchId ? { id: user.branchId._id, name: user.branchId.name, code: user.branchId.code } : null,
+      branchId: user.branchId?._id?.toString() || null,
+      lastLoginAt: loginDate
     },
     token
   };
@@ -202,7 +205,14 @@ export const loginUser = async ({ email, password }) => {
     throw error;
   }
 
-  const roleName = isSuperAdmin ? 'Super Admin' : (user.roleId?.name || 'User');
+  const now = new Date();
+  if (isSuperAdmin) {
+    await SuperAdmin.findByIdAndUpdate(user._id, { $set: { lastLoginAt: now } });
+  } else {
+    await User.findByIdAndUpdate(user._id, { $set: { lastLoginAt: now } });
+  }
+
+  const roleName = isSuperAdmin ? 'Admin' : (user.roleId?.name || 'User');
   const userId = user._id.toString();
 
   const token = jwt.sign(
@@ -226,8 +236,10 @@ export const loginUser = async ({ email, password }) => {
       email: user.email,
       mobile: user.mobile,
       role: roleName,
-      roleId: isSuperAdmin ? 'super_admin' : user.roleId?._id?.toString(),
-      branch: user.branchId ? { id: user.branchId._id, name: user.branchId.name, code: user.branchId.code } : null
+      roleId: isSuperAdmin ? 'admin' : user.roleId?._id?.toString(),
+      branch: user.branchId ? { id: user.branchId._id, name: user.branchId.name, code: user.branchId.code } : null,
+      branchId: user.branchId?._id?.toString() || null,
+      lastLoginAt: now
     },
     token
   };
@@ -247,7 +259,7 @@ export const generateSuperAdminToken = async () => {
       id: userId,
       userId: userId,
       email: superAdmin.email,
-      role: 'Super Admin',
+      role: 'Admin',
       branchId: null
     },
     JWT_SECRET,
@@ -260,9 +272,10 @@ export const generateSuperAdminToken = async () => {
       name: superAdmin.name,
       email: superAdmin.email,
       mobile: superAdmin.mobile,
-      role: 'Super Admin',
-      roleId: 'super_admin',
-      branch: null
+      role: 'Admin',
+      roleId: 'admin',
+      branch: null,
+      lastLoginAt: superAdmin.lastLoginAt || null
     },
     token
   };
@@ -284,7 +297,7 @@ export const getProfile = async (userId) => {
     throw error;
   }
 
-  const roleName = isSuperAdmin ? 'Super Admin' : (user.roleId?.name || 'User');
+  const roleName = isSuperAdmin ? 'Admin' : (user.roleId?.name || 'User');
 
   return {
     id: user._id.toString(),
@@ -293,8 +306,10 @@ export const getProfile = async (userId) => {
     mobile: user.mobile,
     phone: user.mobile,
     role: roleName,
-    roleId: isSuperAdmin ? 'super_admin' : user.roleId?._id?.toString(),
-    branch: user.branchId ? { id: user.branchId._id, name: user.branchId.name, code: user.branchId.code } : null
+    roleId: isSuperAdmin ? 'admin' : user.roleId?._id?.toString(),
+    branch: user.branchId ? { id: user.branchId._id, name: user.branchId.name, code: user.branchId.code } : null,
+    branchId: user.branchId?._id?.toString() || null,
+    lastLoginAt: user.lastLoginAt || null
   };
 };
 
@@ -322,7 +337,7 @@ export const updateProfile = async (userId, data) => {
     throw error;
   }
 
-  const roleName = isSuperAdmin ? 'Super Admin' : (user.roleId?.name || 'User');
+  const roleName = isSuperAdmin ? 'Admin' : (user.roleId?.name || 'User');
 
   return {
     id: user._id.toString(),
@@ -331,8 +346,10 @@ export const updateProfile = async (userId, data) => {
     mobile: user.mobile,
     phone: user.mobile,
     role: roleName,
-    roleId: isSuperAdmin ? 'super_admin' : user.roleId?._id?.toString(),
-    branch: user.branchId ? { id: user.branchId._id, name: user.branchId.name, code: user.branchId.code } : null
+    roleId: isSuperAdmin ? 'admin' : user.roleId?._id?.toString(),
+    branch: user.branchId ? { id: user.branchId._id, name: user.branchId.name, code: user.branchId.code } : null,
+    branchId: user.branchId?._id?.toString() || null,
+    lastLoginAt: user.lastLoginAt || null
   };
 };
 

@@ -24,19 +24,22 @@ export const authenticate = async (req, res, next) => {
             user = {
               ...superAdmin,
               id: superAdmin._id.toString(),
-              role: 'Super Admin',
-              roleId: { name: 'Super Admin', scope: 'all' }
+              role: 'Admin' || 'admin',
+              roleId: { name: 'Admin' || 'admin', scope: 'all' }
             };
           }
         }
 
         if (user) {
-          if (!user.active && user.role !== 'super_admin' && user.role !== 'Super Admin') {
+          if (!user.active && user.role !== 'admin' && user.role !== 'Admin') {
             return forbidden(res, 'User account has been deactivated. Please contact administrator.');
           }
 
           req.user = user;
           req.user.id = user._id ? user._id.toString() : user.id;
+          req.user.role = user.roleId?.name || user.role || 'User';
+          req.user.roleName = user.roleId?.name || user.role || 'User';
+          req.user.branchId = user.branchId?._id || user.branchId || null;
           return next();
         }
       } catch (tokenErr) {
@@ -44,14 +47,14 @@ export const authenticate = async (req, res, next) => {
       }
     }
 
-    // 2. Super Admin fallback:
-    // Super Admin ko mandatory token validation ki need nahi hai
-    // Development me ya x-user-role Super Admin hone par auto-authorize
+    // 2. Admin / Super Admin fallback:
+    // Admin ko mandatory token validation ki need nahi hai
+    // Development me ya x-user-role Admin hone par auto-authorize
     const userRoleHeader = req.headers['x-user-role'];
     const isSuperAdminRequested =
       !userRoleHeader ||
-      userRoleHeader === 'super_admin' ||
-      userRoleHeader === 'Super Admin' ||
+      userRoleHeader === 'admin' ||
+      userRoleHeader === 'Admin' ||
       process.env.NODE_ENV !== 'production';
 
     if (isSuperAdminRequested) {
@@ -60,8 +63,8 @@ export const authenticate = async (req, res, next) => {
         req.user = {
           ...superAdmin,
           id: superAdmin._id.toString(),
-          role: 'Super Admin',
-          roleId: { name: 'Super Admin', scope: 'all' }
+          role: 'Admin',
+          roleId: { name: 'Admin', scope: 'all' }
         };
         req.user.id = superAdmin._id.toString();
         return next();

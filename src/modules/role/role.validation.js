@@ -7,14 +7,19 @@ export const createRoleSchema = Joi.object({
   }),
   description: Joi.string().allow('', null).default(''),
   scope: Joi.string().valid('all', 'districts', 'own').default('own'),
-  matrix: Joi.object().optional()
-});
+  matrix: Joi.object().optional(),
+  permissionsList: Joi.array().items(Joi.string()).optional(),
+  simplifiedPermissions: Joi.object().optional()
+}).unknown(true);
 
 export const updateRoleSchema = Joi.object({
-  name: Joi.string().trim().min(2).max(50),
-  description: Joi.string().allow('', null),
-  scope: Joi.string().valid('all', 'districts', 'own')
-}).min(1);
+  name: Joi.string().trim().min(2).max(50).optional(),
+  description: Joi.string().allow('', null).optional(),
+  scope: Joi.string().valid('all', 'districts', 'own').optional(),
+  matrix: Joi.object().optional(),
+  permissionsList: Joi.array().items(Joi.string()).optional(),
+  simplifiedPermissions: Joi.object().optional()
+}).unknown(true);
 
 export const updatePermissionSchema = Joi.object({
   matrix: Joi.object().optional(),

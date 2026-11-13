@@ -2,7 +2,7 @@ import Joi from 'joi';
 
 export const paginationQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
-  limit: Joi.number().integer().min(1).max(100).default(20),
+  limit: Joi.number().integer().min(1).max(500).default(20),
   search: Joi.string().allow('', null).optional(),
   sortBy: Joi.string().allow('', null).optional(),
   sortOrder: Joi.string().valid('asc', 'desc').default('desc')

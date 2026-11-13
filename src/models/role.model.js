@@ -18,7 +18,15 @@ const roleSchema = new mongoose.Schema({
   },
   isSystem: {
     type: Boolean,
-    default: false // true for Super Admin (cannot be edited or deleted)
+    default: false // true for system root roles
+  },
+  permissionsList: {
+    type: [String],
+    default: []
+  },
+  simplifiedPermissions: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
   }
 }, {
   timestamps: true

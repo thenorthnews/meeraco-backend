@@ -31,7 +31,7 @@ export const fetchUsers = async ({ roleId, branchId, active, search, page = 1, l
       .skip(skip)
       .limit(limitNum)
       .lean(),
-    SuperAdmin.find().select('name email').lean()
+    SuperAdmin.find().select('name email mobile lastLoginAt createdAt').lean()
   ]);
 
   // Collect all managers to resolve names
@@ -47,6 +47,7 @@ export const fetchUsers = async ({ roleId, branchId, active, search, page = 1, l
     managerNameMap.set(sa._id.toString(), sa.name);
     managerNameMap.set('U0', sa.name);
     managerNameMap.set('super_admin', sa.name);
+    managerNameMap.set('admin', sa.name);
   });
 
   const mappedUsers = users.map(u => {
@@ -61,32 +62,34 @@ export const fetchUsers = async ({ roleId, branchId, active, search, page = 1, l
       roleId: u.roleId?._id?.toString() || u.roleId,
       roleName: u.roleId?.name || 'User',
       branchId: u.branchId?._id?.toString() || null,
-      branchName: u.branchId?.name || '—',
+      branchName: u.branchId?.name || 'â€”',
       managerId: mgrIdStr || null,
       reportsTo: reportsToName,
       active: u.active,
       mobileAccess: u.mobileAccess,
       districts: u.districts || [],
-      createdAt: u.createdAt
+      createdAt: u.createdAt,
+      lastLoginAt: u.lastLoginAt || null
     };
   });
 
   const superAdminList = (!roleId && !branchId && pageNum === 1) ? superAdmins.map(sa => ({
     id: sa._id.toString(),
     _id: sa._id.toString(),
-    name: `${sa.name} (Owner)`,
+    name: sa.name ? sa.name.replace(/sxsxsxdcdc/gi, '').replace(/\(Owner\)/gi, '').trim() || 'Meera Rao' : 'Meera Rao',
     email: sa.email,
     mobile: sa.mobile || '9000000000',
-    roleId: 'super_admin',
-    roleName: '—',
+    roleId: 'admin',
+    roleName: 'Admin',
     branchId: null,
     branchName: 'Bengaluru',
     managerId: null,
-    reportsTo: '—',
+    reportsTo: 'â€”',
     active: true,
     mobileAccess: true,
     districts: [],
-    createdAt: sa.createdAt || new Date(0)
+    createdAt: sa.createdAt || new Date(0),
+    lastLoginAt: sa.lastLoginAt || null
   })) : [];
 
   return {
@@ -121,9 +124,9 @@ export const createNewUser = async (data) => {
     throw error;
   }
 
-  // Resolve managerId if it's U0 or Super Admin
+  // Resolve managerId if it's U0 or Super Admin / Admin
   let resolvedManagerId = managerId || null;
-  if (resolvedManagerId === 'U0' || resolvedManagerId === 'super_admin') {
+  if (resolvedManagerId === 'U0' || resolvedManagerId === 'super_admin' || resolvedManagerId === 'admin') {
     const sa = await SuperAdmin.findOne();
     if (sa) resolvedManagerId = sa._id.toString();
   }
@@ -154,7 +157,8 @@ export const createNewUser = async (data) => {
     managerId: resolvedManagerId,
     districts: districts || [],
     active: typeof active === 'boolean' ? active : true,
-    mobileAccess: typeof mobileAccess === 'boolean' ? mobileAccess : true
+    mobileAccess: typeof mobileAccess === 'boolean' ? mobileAccess : true,
+    lastLoginAt: new Date()
   });
 
   const populated = await User.findById(newUser._id)
@@ -179,11 +183,12 @@ export const createNewUser = async (data) => {
     roleId: populated.roleId?._id?.toString(),
     roleName: populated.roleId?.name,
     branchId: populated.branchId?._id?.toString(),
-    branchName: populated.branchId?.name || '—',
+    branchName: populated.branchId?.name || 'â€”',
     managerId: resolvedManagerId ? resolvedManagerId.toString() : null,
     reportsTo: reportsToName,
     active: populated.active,
-    mobileAccess: populated.mobileAccess
+    mobileAccess: populated.mobileAccess,
+    lastLoginAt: populated.lastLoginAt || null
   };
 };
 
@@ -217,7 +222,7 @@ export const updateExistingUser = async (id, data) => {
   }
   if (typeof data.managerId !== 'undefined') {
     let resolvedManagerId = data.managerId || null;
-    if (resolvedManagerId === 'U0' || resolvedManagerId === 'super_admin') {
+    if (resolvedManagerId === 'U0' || resolvedManagerId === 'super_admin' || resolvedManagerId === 'admin') {
       const sa = await SuperAdmin.findOne();
       if (sa) resolvedManagerId = sa._id.toString();
     }
@@ -259,11 +264,12 @@ export const updateExistingUser = async (id, data) => {
     roleId: updated.roleId?._id?.toString(),
     roleName: updated.roleId?.name,
     branchId: updated.branchId?._id?.toString(),
-    branchName: updated.branchId?.name || '—',
+    branchName: updated.branchId?.name || 'â€”',
     managerId: currentMgrId ? currentMgrId.toString() : null,
     reportsTo: reportsToName,
     active: updated.active,
-    mobileAccess: updated.mobileAccess
+    mobileAccess: updated.mobileAccess,
+    lastLoginAt: updated.lastLoginAt || null
   };
 };
 

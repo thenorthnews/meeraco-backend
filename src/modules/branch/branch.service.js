@@ -56,62 +56,6 @@ export const fetchBranches = async ({ search, q, active, state, page = 1, limit 
 
   const query = conditions.length > 0 ? { $and: conditions } : {};
 
-  // Count existing branches in MongoDB to seed initial standard branches if empty
-  const existingCount = await Branch.countDocuments();
-  if (existingCount === 0) {
-    const initialBranches = [
-      {
-        name: 'Delhi NCR',
-        code: 'DEL',
-        address: 'Plot 42, Okhla Industrial Area Phase 2',
-        city: 'New Delhi',
-        state: 'Delhi',
-        gstin: '07AABCM1234C1Z5',
-        phone: '1140001000',
-        email: 'delhi@meeraco.demo',
-        territories: [
-          { state: 'Delhi', districts: ['Central Delhi', 'East Delhi', 'New Delhi', 'North Delhi', 'South Delhi', 'West Delhi'] },
-          { state: 'Haryana', districts: ['Gurugram', 'Faridabad'] }
-        ],
-        active: true
-      },
-      {
-        name: 'Mumbai',
-        code: 'MUM',
-        address: 'Unit 301, Solitaire Corporate Park, Andheri East',
-        city: 'Mumbai',
-        state: 'Maharashtra',
-        gstin: '27AABCM1234C1Z1',
-        phone: '2240001000',
-        email: 'mumbai@meeraco.demo',
-        territories: [
-          { state: 'Maharashtra', districts: ['Mumbai City', 'Mumbai Suburban', 'Thane', 'Palghar'] }
-        ],
-        active: true
-      },
-      {
-        name: 'Bengaluru',
-        code: 'BLR',
-        address: 'Plot 15, Peenya Industrial Area Phase 1',
-        city: 'Bengaluru',
-        state: 'Karnataka',
-        gstin: '29AABCM1234C1Z7',
-        phone: '8040001000',
-        email: 'bengaluru@meeraco.demo',
-        territories: [
-          { state: 'Karnataka', districts: ['Bangalore Urban', 'Bangalore Rural'] }
-        ],
-        active: true
-      }
-    ];
-
-    try {
-      await Branch.insertMany(initialBranches);
-    } catch (e) {
-      console.warn('Initial branch insertion note:', e.message);
-    }
-  }
-
   // Count total matching branches in MongoDB
   const total = await Branch.countDocuments(query);
 
@@ -260,13 +204,22 @@ export const fetchBranchById = async (id) => {
 
 export const createNewBranch = async (data) => {
   const { name, code, address, city, state, gstin, phone, email, managerId, territories } = data;
-  const cleanCode = code.toUpperCase().trim();
-
-  const existing = await Branch.findOne({ code: cleanCode });
-  if (existing) {
-    const error = new Error(`Branch code '${cleanCode}' is already taken`);
-    error.statusCode = 400;
-    throw error;
+  let cleanCode = code ? code.toUpperCase().trim() : '';
+  if (!cleanCode) {
+    const prefix = (city || name || 'BR').replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase() || 'BR';
+    cleanCode = prefix;
+    let counter = 1;
+    while (await Branch.findOne({ code: cleanCode })) {
+      cleanCode = `${prefix}${counter}`;
+      counter++;
+    }
+  } else {
+    const existing = await Branch.findOne({ code: cleanCode });
+    if (existing) {
+      const error = new Error(`Branch code '${cleanCode}' is already taken`);
+      error.statusCode = 400;
+      throw error;
+    }
   }
 
   // Resolve managerId if it's U0 or Super Admin

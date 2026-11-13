@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { Role, RolePermission, User } from '../../models/index.js';
 
 const MODULES = [
@@ -75,34 +76,73 @@ export const fetchAllRoles = async () => {
         description: r.description,
         scope: r.scope,
         isSystem: r.isSystem,
+        permissionsList: r.permissionsList || [],
+        simplifiedPermissions: r.simplifiedPermissions || {},
         usersCount,
         matrix
       };
     })
   );
 
-  // Always prepend Super Admin system role with unchangeable full permissions
-  const hasSuperAdmin = results.some(r => r.name === 'Super Admin' || r.id === 'super_admin');
-  if (!hasSuperAdmin) {
-    const superAdminRole = {
-      id: 'super_admin',
-      name: 'Super Admin',
-      description: 'Full system owner access. Unrestricted across all modules and actions.',
+  // Ensure Admin is always present
+  if (!results.some(r => r.name === 'Admin')) {
+    results.unshift({
+      id: 'admin',
+      name: 'Admin',
+      description: 'System Administrator with full access across all modules and branches.',
       scope: 'all',
       isSystem: true,
       usersCount: 1,
       matrix: Object.fromEntries(MODULES.map(m => [m, { view: true, create: true, edit: true, delete: true, export: true }]))
-    };
-    results.unshift(superAdminRole);
+    });
   }
 
-  return results;
+  // Canonical sort: Admin, Sales Manager, Sales Executive, followed by custom roles
+  const ORDER = ['Admin', 'Sales Manager', 'Sales Executive'];
+  results.sort((a, b) => {
+    const idxA = ORDER.indexOf(a.name);
+    const idxB = ORDER.indexOf(b.name);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  return results.map(r => {
+    if (r.name === 'Admin' || r.id === 'admin') {
+      return {
+        ...r,
+        description: 'System Administrator with full access across all modules and branches.',
+        scope: 'all',
+        isSystem: true,
+        matrix: Object.fromEntries(MODULES.map(m => [m, { view: true, create: true, edit: true, delete: true, export: true }]))
+      };
+    }
+    return r;
+  });
 };
 
 export const fetchRoleById = async (id) => {
-  const role = await Role.findById(id).lean();
+  let role = null;
+  const idStr = String(id || '').trim();
+
+  if (idStr === 'super_admin' || idStr === 'admin') {
+    role = await Role.findOne({ name: 'Admin' }).lean();
+  }
+  if (!role && mongoose.isValidObjectId(idStr)) {
+    role = await Role.findById(idStr).lean();
+  }
   if (!role) {
-    const error = new Error(`Role with ID '${id}' not found`);
+    const cleanName = idStr.replace(/_/g, ' ');
+    role = await Role.findOne({
+      $or: [
+        { name: new RegExp(`^${idStr}$`, 'i') },
+        { name: new RegExp(`^${cleanName}$`, 'i') }
+      ]
+    }).lean();
+  }
+  if (!role) {
+    const error = new Error(`Role with ID '${idStr}' not found`);
     error.statusCode = 404;
     throw error;
   }
@@ -123,6 +163,8 @@ export const fetchRoleById = async (id) => {
   return {
     id: role._id.toString(),
     ...role,
+    permissionsList: role.permissionsList || [],
+    simplifiedPermissions: role.simplifiedPermissions || {},
     matrix
   };
 };
@@ -139,10 +181,12 @@ export const createRole = async (data) => {
     name: data.name.trim(),
     description: data.description || '',
     scope: data.scope || 'own',
-    isSystem: false
+    isSystem: false,
+    permissionsList: data.permissionsList || [],
+    simplifiedPermissions: data.simplifiedPermissions || {}
   });
 
-  // Initialize 14 module permissions (using passed matrix if provided)
+  // Initialize module permissions (using passed matrix if provided)
   for (const m of MODULES) {
     const mod = data.matrix?.[m] || {};
     await RolePermission.create({
@@ -160,41 +204,95 @@ export const createRole = async (data) => {
 };
 
 export const updateRole = async (id, data) => {
-  const role = await Role.findById(id);
+  let role = null;
+  const idStr = String(id || '').trim();
+  if (idStr === 'admin' || idStr === 'super_admin') {
+    role = await Role.findOne({ name: 'Admin' });
+  } else if (mongoose.isValidObjectId(idStr)) {
+    role = await Role.findById(idStr);
+  } else {
+    const cleanName = idStr.replace(/_/g, ' ');
+    role = await Role.findOne({
+      $or: [
+        { name: new RegExp(`^${idStr}$`, 'i') },
+        { name: new RegExp(`^${cleanName}$`, 'i') }
+      ]
+    });
+  }
+
   if (!role) {
     const error = new Error('Role not found');
     error.statusCode = 404;
     throw error;
   }
 
-  if (role.isSystem && data.scope && data.scope !== role.scope) {
-    const error = new Error('System roles cannot have their scope modified');
-    error.statusCode = 400;
-    throw error;
+  const updateFields = {};
+  if (data.name && (!role.isSystem || role.name !== 'Admin')) {
+    updateFields.name = data.name.trim();
+  }
+  if (typeof data.description !== 'undefined') {
+    updateFields.description = data.description.trim();
+  }
+  if (data.scope && (!role.isSystem || role.name !== 'Admin')) {
+    updateFields.scope = data.scope;
+  }
+  if (data.permissionsList) {
+    updateFields.permissionsList = data.permissionsList;
+  }
+  if (data.simplifiedPermissions) {
+    updateFields.simplifiedPermissions = data.simplifiedPermissions;
   }
 
-  const updated = await Role.findByIdAndUpdate(id, { $set: data }, { new: true }).lean();
-  return updated;
+  await Role.findByIdAndUpdate(role._id, { $set: updateFields }, { new: true });
+
+  // If matrix is passed, also update RolePermission collection
+  if (data.matrix && typeof data.matrix === 'object' && role.name !== 'Admin') {
+    for (const m of MODULES) {
+      const p = data.matrix[m] || {};
+      await RolePermission.findOneAndUpdate(
+        { roleId: role._id, module: m },
+        {
+          $set: {
+            canView: !!p.view,
+            canCreate: !!p.create,
+            canEdit: !!p.edit,
+            canDelete: !!p.delete,
+            canExport: !!p.export
+          }
+        },
+        { new: true, upsert: true }
+      );
+    }
+  }
+
+  return await fetchRoleById(role._id);
 };
 
 export const updateRolePermission = async (roleId, data) => {
-  if (roleId === 'super_admin') {
-    const error = new Error('The Super Admin role cannot be edited or deleted.');
-    error.statusCode = 400;
-    throw error;
+  let role = null;
+  const idStr = String(roleId || '').trim();
+  if (idStr === 'admin' || idStr === 'super_admin') {
+    role = await Role.findOne({ name: 'Admin' });
+  } else if (mongoose.isValidObjectId(idStr)) {
+    role = await Role.findById(idStr);
+  } else {
+    const cleanName = idStr.replace(/_/g, ' ');
+    role = await Role.findOne({
+      $or: [
+        { name: new RegExp(`^${idStr}$`, 'i') },
+        { name: new RegExp(`^${cleanName}$`, 'i') }
+      ]
+    });
   }
 
-  const role = await Role.findById(roleId);
   if (!role) {
     const error = new Error('Role not found');
     error.statusCode = 404;
     throw error;
   }
 
-  if (role.isSystem || role.name === 'Super Admin') {
-    const error = new Error('The Super Admin role cannot be edited or deleted.');
-    error.statusCode = 400;
-    throw error;
+  if (role.name === 'Admin' || role.id === 'admin') {
+    return await fetchRoleById(role._id);
   }
 
   // Bulk matrix update
@@ -202,7 +300,7 @@ export const updateRolePermission = async (roleId, data) => {
     const promises = MODULES.map(async (m) => {
       const p = data.matrix[m] || {};
       return RolePermission.findOneAndUpdate(
-        { roleId, module: m },
+        { roleId: role._id, module: m },
         {
           $set: {
             canView: !!p.view,
@@ -246,28 +344,34 @@ export const updateRolePermission = async (roleId, data) => {
 };
 
 export const deleteRole = async (id) => {
-  const role = await Role.findById(id);
+  let role = null;
+  if (mongoose.isValidObjectId(id)) {
+    role = await Role.findById(id);
+  } else {
+    role = await Role.findOne({ name: new RegExp(`^${id}$`, 'i') });
+  }
+
   if (!role) {
     const error = new Error('Role not found');
     error.statusCode = 404;
     throw error;
   }
 
-  if (role.isSystem) {
-    const error = new Error('The Super Admin role cannot be edited or deleted.');
+  if (role.isSystem || role.name === 'Admin' || role.name === 'Sales Manager' || role.name === 'Sales Executive') {
+    const error = new Error('Primary system roles cannot be deleted.');
     error.statusCode = 400;
     throw error;
   }
 
-  const usersCount = await User.countDocuments({ roleId: id });
+  const usersCount = await User.countDocuments({ roleId: role._id });
   if (usersCount > 0) {
-    const error = new Error(`Cannot delete role: ${usersCount} user(s) are currently assigned to it`);
+    const error = new Error(`Cannot delete: ${usersCount} user(s) are assigned to this role.`);
     error.statusCode = 400;
     throw error;
   }
 
-  await Role.findByIdAndDelete(id);
-  await RolePermission.deleteMany({ roleId: id });
+  await RolePermission.deleteMany({ roleId: role._id });
+  await Role.findByIdAndDelete(role._id);
 
-  return { message: 'Role deleted successfully' };
+  return { message: `Role '${role.name}' deleted successfully` };
 };
