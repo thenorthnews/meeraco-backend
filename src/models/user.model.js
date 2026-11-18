@@ -66,7 +66,17 @@ const userSchema = new mongoose.Schema({
   lastLoginAt: {
     type: Date,
     default: null
-  }
+  },
+  fcmToken: {
+    type: String,
+    default: null
+  },
+  deviceTokens: [{
+    token: { type: String, required: true },
+    platform: { type: String, default: 'web' },
+    registeredAt: { type: Date, default: Date.now },
+    lastActiveAt: { type: Date, default: Date.now }
+  }]
 }, {
   timestamps: true
 });
@@ -75,3 +85,5 @@ const User = mongoose.models.User || mongoose.model('User', userSchema);
 
 export default User;
 export { User };
+
+

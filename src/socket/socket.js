@@ -45,6 +45,18 @@ export const initSocket = (httpServer) => {
       if (data.branchId) socket.join(`branch:${data.branchId}`);
     });
 
+    // Real-time Lead Stage Live Sync across sales team
+    socket.on('lead:stage_changed', (data) => {
+      socket.broadcast.emit('lead:stage_changed', data);
+      if (data?.lead) socket.broadcast.emit('lead:updated', data.lead);
+    });
+
+    // Real-time Quotation Workflow Live Sync (Sales Executive <-> Sales Manager)
+    socket.on('quotation:status_changed', (data) => {
+      socket.broadcast.emit('quotation:status_changed', data);
+      if (data?.quote) socket.broadcast.emit('quotation:updated', data.quote);
+    });
+
     socket.on('disconnect', () => {
       // disconnected
     });
@@ -54,15 +66,9 @@ export const initSocket = (httpServer) => {
   return io;
 };
 
-/**
- * Get Socket.IO Instance
- */
+
 export const getIO = () => io;
 
-/**
- * Emit Role Permissions Updated
- * Instant real-time permission sync without page refresh!
- */
 export const emitRolePermissionsUpdated = (role) => {
   if (!io || !role) return;
   const roleId = String(role.id || role._id || '');
@@ -109,5 +115,21 @@ export const emitLeadUpdated = (lead) => {
 export const emitCustomerCreated = (customer) => {
   if (!io || !customer) return;
   io.emit('customer:created', customer);
+};
+
+/**
+ * Emit Customer Updated
+ */
+export const emitCustomerUpdated = (customer) => {
+  if (!io || !customer) return;
+  io.emit('customer:updated', customer);
+};
+
+/**
+ * Emit Customer Deleted
+ */
+export const emitCustomerDeleted = (customerId) => {
+  if (!io || !customerId) return;
+  io.emit('customer:deleted', customerId);
 };
 

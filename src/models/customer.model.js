@@ -29,6 +29,7 @@ const customerSchema = new mongoose.Schema({
   type: { type: String, default: 'Business' },
   industry: { type: String, default: '' },
   segment: { type: String, default: 'Industrial' },
+  source: { type: String, default: 'Manual' },
   gstin: { type: String, default: '' },
   pan: { type: String, default: '' },
   billingAddress: { type: String, default: '' },

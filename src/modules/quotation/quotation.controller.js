@@ -2,6 +2,7 @@ import { ok, created, badRequest, notFound, serverError, paginated } from '../..
 import * as quotationService from './quotation.service.js';
 import { createQuotationSchema, updateQuotationStatusSchema } from './quotation.validation.js';
 import { paginationQuerySchema, idParamSchema } from '../../validations/common.validation.js';
+import { createNotification, notifyManagersAndAdmins } from '../notification/notification.service.js';
 
 export const getQuotations = async (req, res) => {
   try {
@@ -33,6 +34,16 @@ export const getQuotations = async (req, res) => {
   }
 };
 
+export const getQuotationById = async (req, res) => {
+  try {
+    const quote = await quotationService.fetchQuotationById(req.params.id);
+    return ok(res, 'Quotation fetched successfully', quote);
+  } catch (error) {
+    if (error.statusCode === 404) return notFound(res, error.message);
+    return serverError(res, 'Failed to fetch quotation', error);
+  }
+};
+
 export const createQuotation = async (req, res) => {
   try {
     const { error, value } = createQuotationSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
@@ -44,6 +55,21 @@ export const createQuotation = async (req, res) => {
     return created(res, 'Quotation generated successfully', quotation);
   } catch (error) {
     return serverError(res, 'Failed to create quotation', error);
+  }
+};
+
+export const updateQuotation = async (req, res) => {
+  try {
+    const { error: paramErr } = idParamSchema.validate(req.params, { abortEarly: false });
+    if (paramErr) {
+      return badRequest(res, paramErr.details.map(d => d.message).join(', '));
+    }
+
+    const updated = await quotationService.updateQuotationContent(req.params.id, req.body, req.user);
+    return ok(res, 'Quotation revised & saved successfully', updated);
+  } catch (error) {
+    if (error.statusCode === 404) return notFound(res, error.message);
+    return serverError(res, 'Failed to update quotation', error);
   }
 };
 
@@ -59,10 +85,20 @@ export const updateQuotationStatus = async (req, res) => {
       return badRequest(res, bodyErr.details.map(d => d.message).join(', '));
     }
 
-    const updated = await quotationService.changeQuotationStatus(req.params.id, value.status, value.notes);
+    const updated = await quotationService.changeQuotationStatus(req.params.id, value.status, value.notes, req.user, value.leadId);
     return ok(res, `Quotation status updated to '${value.status}'`, updated);
   } catch (error) {
     if (error.statusCode === 404) return notFound(res, error.message);
     return serverError(res, 'Failed to update quotation status', error);
+  }
+};
+
+export const deleteQuotation = async (req, res) => {
+  try {
+    const result = await quotationService.removeQuotation(req.params.id);
+    return ok(res, 'Quotation deleted successfully', result);
+  } catch (error) {
+    if (error.statusCode === 404) return notFound(res, error.message);
+    return serverError(res, 'Failed to delete quotation', error);
   }
 };

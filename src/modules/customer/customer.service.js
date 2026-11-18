@@ -1,5 +1,77 @@
 import mongoose from 'mongoose';
-import { Customer, Branch, User, SuperAdmin } from '../../models/index.js';
+import { Customer, Branch, User, SuperAdmin, Quotation, Lead } from '../../models/index.js';
+import { emitCustomerCreated, emitCustomerUpdated, emitCustomerDeleted } from '../../socket/socket.js';
+
+/**
+ * Enrich customer products with products from accepted/approved/sent quotations
+ */
+const enrichCustomerProducts = async (customerDoc) => {
+  if (!customerDoc) return customerDoc;
+  try {
+    const custId = customerDoc._id;
+    const custNum = customerDoc.customerNumber;
+    const compName = (customerDoc.companyName || customerDoc.name || '').trim();
+
+    // Find all leads associated with this customer
+    const leads = await Lead.find({
+      $or: [
+        { customerId: custId },
+        ...(compName ? [{ company: new RegExp(`^${compName}$`, 'i') }] : [])
+      ]
+    }).select('_id name company').lean();
+
+    const leadIds = leads.map(l => l._id);
+
+    // Find all quotations for this customer or associated leads
+    const quotes = await Quotation.find({
+      $or: [
+        { customerId: custId },
+        { customerNumber: custNum },
+        ...(leadIds.length > 0 ? [{ leadId: { $in: leadIds } }] : [])
+      ],
+      $or: [
+        { status: { $in: ['Accepted', 'Won', 'Sent', 'Approved'] } },
+        { approvalStatus: 'Approved' }
+      ]
+    }).lean();
+
+    const directProducts = Array.isArray(customerDoc.products) ? [...customerDoc.products] : [];
+    const directKeys = new Set(directProducts.map(p => `${p.quoteNumber || ''}_${p.name}`));
+
+    quotes.forEach(q => {
+      const items = Array.isArray(q.items) ? q.items : Array.isArray(q.lines) ? q.lines : [];
+      items.forEach((it, idx) => {
+        const desc = it.description || it.name || 'Genset Equipment';
+        const key = `${q.quoteNumber || ''}_${desc}`;
+        if (!directKeys.has(key)) {
+          directKeys.add(key);
+          const kvaMatch = desc.match(/(\d+(\.\d+)?\s*kVA)/i);
+          directProducts.push({
+            id: `q-${q._id}-${idx}`,
+            _id: `q-${q._id}-${idx}`,
+            name: desc,
+            kva: it.kva || (kvaMatch ? kvaMatch[1] : ''),
+            model: it.model || desc,
+            serialNumber: it.serialNumber || '—',
+            qty: it.quantity || it.qty || 1,
+            rate: it.total || it.unitPrice || it.rate || 0,
+            purchaseDate: q.approvedAt || q.updatedAt || q.createdAt,
+            warrantyExpiry: null,
+            status: (q.status === 'Accepted' || q.status === 'Won') ? 'Under Warranty' : 'Quoted',
+            quoteNumber: q.quoteNumber || '—',
+            notes: `From Quotation ${q.quoteNumber || ''}`,
+            isFromQuote: true
+          });
+        }
+      });
+    });
+
+    customerDoc.products = directProducts;
+  } catch (err) {
+    console.warn('Enrich customer products error:', err.message);
+  }
+  return customerDoc;
+};
 
 /**
  * Helper to resolve branchId string/code to valid MongoDB ObjectId
@@ -77,8 +149,13 @@ const formatCustomer = (c) => {
       warrantyExpiry: p.warrantyExpiry || null,
       status: p.status || 'Delivered',
       quoteNumber: p.quoteNumber || '',
-      notes: p.notes || ''
+      notes: p.notes || '',
+      isFromQuote: Boolean(p.isFromQuote)
     })),
+    leadsCount: c.leadsCount ?? 0,
+    wonCount: c.wonCount ?? 0,
+    wonValue: c.wonValue ?? 0,
+    source: c.source || (c.wonCount > 0 ? 'Won deal' : 'Manual'),
     createdAt: c.createdAt,
     updatedAt: c.updatedAt
   };
@@ -89,13 +166,13 @@ export const fetchCustomers = async ({ branchId, status, search, page = 1, limit
   const limitNum = Math.max(1, Number(limit) || 10);
   const skip = (pageNum - 1) * limitNum;
 
-  const query = {};
+  const andClauses = [];
 
   // Branch filter
   if (branchId && branchId !== 'all') {
     const resolvedBranch = await resolveBranchObjectId(branchId);
     if (resolvedBranch) {
-      query.branchId = resolvedBranch;
+      andClauses.push({ branchId: resolvedBranch });
     }
   }
 
@@ -109,39 +186,77 @@ export const fetchCustomers = async ({ branchId, status, search, page = 1, limit
       ''
     ).toLowerCase();
 
+    const isTopAdmin = roleStr.includes('admin') || roleStr.includes('super') || roleStr.includes('owner');
+    const isManager = roleStr.includes('manager');
+
     const currentUserId = user._id || user.id;
-    const userBranchId = user.branchId?._id || (mongoose.Types.ObjectId.isValid(user.branchId) ? user.branchId : null);
+    const userObjId = mongoose.Types.ObjectId.isValid(currentUserId)
+      ? new mongoose.Types.ObjectId(currentUserId)
+      : currentUserId;
 
-    const userRole = user.roleId || {};
-    const perms = Array.isArray(userRole.permissionsList)
-      ? userRole.permissionsList
-      : (userRole.simplifiedPermissions && typeof userRole.simplifiedPermissions === 'object')
-        ? Object.keys(userRole.simplifiedPermissions).filter(k => userRole.simplifiedPermissions[k])
-        : null;
+    const rawBranchId = user.branchId?._id || user.branchId?.id || user.branch?.id || user.branch?._id || user.branchId;
+    const userBranchId = (rawBranchId && mongoose.Types.ObjectId.isValid(rawBranchId))
+      ? new mongoose.Types.ObjectId(rawBranchId)
+      : null;
 
-    if (perms && !roleStr.includes('admin')) {
-      const canViewAll = perms.includes('view_all_leads');
-      const canViewAssigned = perms.includes('view_assigned_leads');
+    if (!isTopAdmin) {
+      if (isManager) {
+        // Sales Manager: Branch head.
+        // Manager should see:
+        // 1. All customers with branchId matching manager's branch
+        // 2. Customers owned by manager or by team members in manager's branch
+        // 3. Customers linked to leads in this branch/team
+        // 4. Won deal customers
+        const teamMemberIds = [userObjId];
+        const teamQuery = {
+          $or: [
+            { managerId: userObjId },
+            ...(userBranchId ? [{ branchId: userBranchId }] : [])
+          ]
+        };
+        const teamUsers = await User.find(teamQuery).select('_id').lean();
+        teamUsers.forEach(u => teamMemberIds.push(u._id));
 
-      if (!canViewAll && canViewAssigned) {
-        query.ownerId = currentUserId;
-      } else if (canViewAll) {
-        if (userBranchId) {
-          query.$or = [{ branchId: userBranchId }, { ownerId: currentUserId }];
-        }
-      } else {
-        query._id = new mongoose.Types.ObjectId();
-      }
-    } else if (roleStr.includes('executive')) {
-      query.ownerId = currentUserId;
-    } else if (roleStr.includes('manager')) {
-      if (userBranchId) {
-        query.$or = [
-          { branchId: userBranchId },
-          { ownerId: currentUserId }
+        const branchLeads = await Lead.find({
+          $or: [
+            ...(userBranchId ? [{ branchId: userBranchId }] : []),
+            { assignedToId: { $in: teamMemberIds } },
+            { createdById: { $in: teamMemberIds } }
+          ],
+          customerId: { $ne: null }
+        }).select('customerId').lean();
+
+        const branchCustIds = branchLeads.map(l => l.customerId).filter(Boolean);
+
+        const managerScopeOr = [
+          { ownerId: { $in: teamMemberIds } },
+          ...(userBranchId ? [{ branchId: userBranchId }] : []),
+          ...(branchCustIds.length > 0 ? [{ _id: { $in: branchCustIds } }] : []),
+          { source: /won/i }
         ];
+
+        andClauses.push({ $or: managerScopeOr });
       } else {
-        query.ownerId = currentUserId;
+        // Sales Executive: Field executive
+        // Executive should see:
+        // 1. Customers they own
+        // 2. Customers linked to leads assigned to them or created by them
+        const myLeads = await Lead.find({
+          $or: [
+            { assignedToId: userObjId },
+            { createdById: userObjId }
+          ],
+          customerId: { $ne: null }
+        }).select('customerId').lean();
+
+        const myCustIds = myLeads.map(l => l.customerId).filter(Boolean);
+
+        andClauses.push({
+          $or: [
+            { ownerId: userObjId },
+            ...(myCustIds.length > 0 ? [{ _id: { $in: myCustIds } }] : [])
+          ]
+        });
       }
     }
   }
@@ -149,26 +264,30 @@ export const fetchCustomers = async ({ branchId, status, search, page = 1, limit
   // Active / Status filter
   if (status && status !== 'all') {
     if (status === 'Active' || status === 'true' || status === true) {
-      query.active = true;
+      andClauses.push({ active: true });
     } else if (status === 'Inactive' || status === 'false' || status === false) {
-      query.active = false;
+      andClauses.push({ active: false });
     }
   }
 
   // Search filter
   if (search && search.trim()) {
     const s = search.trim();
-    query.$or = [
-      { companyName: { $regex: s, $options: 'i' } },
-      { name: { $regex: s, $options: 'i' } },
-      { customerNumber: { $regex: s, $options: 'i' } },
-      { gstin: { $regex: s, $options: 'i' } },
-      { pan: { $regex: s, $options: 'i' } },
-      { city: { $regex: s, $options: 'i' } },
-      { 'contacts.name': { $regex: s, $options: 'i' } },
-      { 'contacts.mobile': { $regex: s, $options: 'i' } }
-    ];
+    andClauses.push({
+      $or: [
+        { companyName: { $regex: s, $options: 'i' } },
+        { name: { $regex: s, $options: 'i' } },
+        { customerNumber: { $regex: s, $options: 'i' } },
+        { gstin: { $regex: s, $options: 'i' } },
+        { pan: { $regex: s, $options: 'i' } },
+        { city: { $regex: s, $options: 'i' } },
+        { 'contacts.name': { $regex: s, $options: 'i' } },
+        { 'contacts.mobile': { $regex: s, $options: 'i' } }
+      ]
+    });
   }
+
+  const query = andClauses.length > 0 ? { $and: andClauses } : {};
 
   const [total, rawCustomers] = await Promise.all([
     Customer.countDocuments(query),
@@ -180,6 +299,65 @@ export const fetchCustomers = async ({ branchId, status, search, page = 1, limit
       .limit(limitNum)
       .lean()
   ]);
+
+  if (rawCustomers.length > 0) {
+    try {
+      const custIds = rawCustomers.map(c => c._id);
+      const custNumbers = rawCustomers.map(c => c.customerNumber).filter(Boolean);
+      const compNames = rawCustomers.map(c => (c.companyName || c.name || '').trim()).filter(Boolean);
+
+      const leads = await Lead.find({
+        $or: [
+          { customerId: { $in: custIds } },
+          { customerId: { $in: custNumbers } },
+          { company: { $in: compNames.map(n => new RegExp(`^${n}$`, 'i')) } }
+        ]
+      }).select('_id customerId company stage estimatedValue value quotationId').lean();
+
+      const leadIds = leads.map(l => l._id);
+
+      const quotes = await Quotation.find({
+        $or: [
+          { customerId: { $in: custIds } },
+          { customerNumber: { $in: custNumbers } },
+          ...(leadIds.length > 0 ? [{ leadId: { $in: leadIds } }] : [])
+        ]
+      }).select('_id customerId customerNumber leadId status grandTotal total').lean();
+
+      rawCustomers.forEach(c => {
+        const cIdStr = c._id.toString();
+        const cNum = c.customerNumber;
+        const cNameLower = (c.companyName || c.name || '').trim().toLowerCase();
+
+        const matchedLeads = leads.filter(l => {
+          const lCustId = String(l.customerId || '');
+          const lComp = (l.company || '').trim().toLowerCase();
+          return lCustId === cIdStr || (cNum && lCustId === cNum) || (cNameLower && lComp === cNameLower);
+        });
+
+        const matchedLeadIds = new Set(matchedLeads.map(l => l._id.toString()));
+
+        const matchedQuotes = quotes.filter(q => {
+          const qCustId = String(q.customerId || '');
+          const qLeadId = String(q.leadId || '');
+          return qCustId === cIdStr || (cNum && q.customerNumber === cNum) || (qLeadId && matchedLeadIds.has(qLeadId));
+        });
+
+        const wonLeads = matchedLeads.filter(l => l.stage === 'Won' || l.stage === 'Deal Won');
+        const wonQuotes = matchedQuotes.filter(q => q.status === 'Accepted' || q.status === 'Won');
+
+        c.leadsCount = matchedLeads.length;
+        c.wonCount = Math.max(wonLeads.length, wonQuotes.length);
+
+        const quoteVal = wonQuotes.reduce((acc, q) => acc + (Number(q.grandTotal || q.total) || 0), 0);
+        const leadVal = wonLeads.reduce((acc, l) => acc + (Number(l.estimatedValue || l.value) || 0), 0);
+        c.wonValue = quoteVal || leadVal || 0;
+        c.source = (c.wonCount > 0 || String(c.source || '').toLowerCase().includes('won')) ? 'Won deal' : (c.source || 'Manual');
+      });
+    } catch (enrichErr) {
+      console.warn('Customer enrichment note:', enrichErr.message);
+    }
+  }
 
   const totalPages = Math.ceil(total / limitNum) || 1;
 
@@ -199,7 +377,10 @@ export const fetchCustomerById = async (id) => {
       .populate('branchId', 'name code')
       .populate('ownerId', 'name email')
       .lean();
-    if (byNum) return formatCustomer(byNum);
+    if (byNum) {
+      await enrichCustomerProducts(byNum);
+      return formatCustomer(byNum);
+    }
 
     const err = new Error('Customer not found');
     err.statusCode = 404;
@@ -217,6 +398,7 @@ export const fetchCustomerById = async (id) => {
     throw error;
   }
 
+  await enrichCustomerProducts(customer);
   return formatCustomer(customer);
 };
 
@@ -271,7 +453,13 @@ export const createNewCustomer = async (data, user) => {
     .populate('ownerId', 'name email')
     .lean();
 
-  return formatCustomer(populated);
+  const formatted = formatCustomer(populated);
+  try {
+    emitCustomerCreated(formatted);
+  } catch (e) {
+    console.warn('Socket emit customer created error:', e.message);
+  }
+  return formatted;
 };
 
 export const updateExistingCustomer = async (id, data, user) => {
@@ -330,7 +518,13 @@ export const updateExistingCustomer = async (id, data, user) => {
     .populate('ownerId', 'name email')
     .lean();
 
-  return formatCustomer(updated);
+  const formatted = formatCustomer(updated);
+  try {
+    emitCustomerUpdated(formatted);
+  } catch (e) {
+    console.warn('Socket emit customer updated error:', e.message);
+  }
+  return formatted;
 };
 
 export const deleteExistingCustomer = async (id, user) => {
@@ -342,6 +536,11 @@ export const deleteExistingCustomer = async (id, user) => {
   }
 
   await Customer.findByIdAndDelete(id);
+  try {
+    emitCustomerDeleted(id);
+  } catch (e) {
+    console.warn('Socket emit customer deleted error:', e.message);
+  }
   return { id, name: existing.companyName || existing.name, success: true };
 };
 

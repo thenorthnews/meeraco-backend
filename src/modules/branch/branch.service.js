@@ -56,7 +56,6 @@ export const fetchBranches = async ({ search, q, active, state, page = 1, limit 
 
   const query = conditions.length > 0 ? { $and: conditions } : {};
 
-  // Count total matching branches in MongoDB
   const total = await Branch.countDocuments(query);
 
   // Fetch paginated branches from MongoDB
@@ -129,7 +128,7 @@ export const fetchBranches = async ({ search, q, active, state, page = 1, limit 
     const idStr = b._id.toString();
     const mgrId = b.managerId ? b.managerId.toString() : null;
     return {
-      id: idStr,
+      _id: idStr,
       name: b.name,
       code: b.code,
       address: b.address || '',

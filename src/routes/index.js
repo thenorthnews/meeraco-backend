@@ -9,6 +9,7 @@ import productRoutes from '../modules/product/product.routes.js';
 import roleRoutes from '../modules/role/role.routes.js';
 import settingsRoutes from '../modules/settings/settings.routes.js';
 import dashboardRoutes from '../modules/dashboard/dashboard.routes.js';
+import notificationRoutes from '../modules/notification/notification.routes.js';
 
 const router = Router();
 
@@ -31,5 +32,6 @@ router.use('/quotations', quotationRoutes);
 router.use('/products', productRoutes);
 router.use('/roles', roleRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/notifications', notificationRoutes);
 
 export default router;

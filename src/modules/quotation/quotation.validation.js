@@ -11,7 +11,7 @@ const quotationItemSchema = Joi.object({
   unitPrice: Joi.number().min(0).required().messages({
     'any.required': 'Unit price is required'
   }),
-  discountPct: Joi.number().min(0).max(100).default(0),
+  discountPct: Joi.number().min(0).max(100).default(5),
   gstPct: Joi.number().min(0).max(28).default(18)
 });
 
@@ -37,6 +37,7 @@ export const updateQuotationStatusSchema = Joi.object({
     'any.only': 'Status must be one of Draft, Pending Approval, Approved, Sent, Accepted, Rejected, Expired',
     'any.required': 'Status is required'
   }),
-  notes: Joi.string().allow('', null)
+  notes: Joi.string().allow('', null),
+  leadId: Joi.string().allow('', null)
 });
 

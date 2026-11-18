@@ -11,3 +11,4 @@ export { Product } from './product.model.js';
 export { GeneralSetting } from './settings.model.js';
 export { LeadMaster } from './leadMaster.model.js';
 export { AssignmentRule } from './assignmentRule.model.js';
+export { Notification } from './notification.model.js';

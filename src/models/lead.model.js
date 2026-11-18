@@ -2,18 +2,6 @@ import mongoose from 'mongoose';
 
 const sanitizeObjectId = v => (v && /^[0-9a-fA-F]{24}$/.test(String(v?._id || v?.id || v))) ? v : null;
 
-const leadActivitySchema = new mongoose.Schema({
-  type: {
-    type: String,
-    enum: ['CREATED', 'EDITED', 'STAGE_CHANGE', 'REASSIGNED', 'NOTE_ADDED', 'FOLLOW_UP', 'STATUS_CHANGE', 'QUOTATION'],
-    default: 'EDITED'
-  },
-  text: { type: String, required: true },
-  by: { type: String, default: 'System' },
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, set: sanitizeObjectId },
-  at: { type: Date, default: Date.now }
-}, { _id: true });
-
 const leadNoteSchema = new mongoose.Schema({
   text: { type: String, required: true },
   by: { type: String, default: 'System' },
@@ -57,9 +45,23 @@ const leadSchema = new mongoose.Schema({
   createdById: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, set: sanitizeObjectId },  // Creator
   customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null, set: sanitizeObjectId }, // Linked customer when won
 
+  // Quotation Management & Status Tracking (Sales Manager / Executive Workflow)
+  quotationStatus: {
+    type: String,
+    enum: ['None', 'Draft', 'Pending Approval', 'Approved', 'Rejected', 'Sent', 'Accepted'],
+    default: 'None'
+  },
+  quotationNumber: { type: String, default: null },
+  quotationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Quotation', default: null, set: sanitizeObjectId },
+  quotationApprovedAt: { type: Date, default: null },
+  quotationApprovedBy: { type: String, default: null },
+  quotationApprovedById: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, set: sanitizeObjectId },
+  quotationRejectedAt: { type: Date, default: null },
+  quotationRejectedBy: { type: String, default: null },
+  quotationRejectionReason: { type: String, default: null },
+
   notes: [leadNoteSchema],
-  stageHistory: [stageHistorySchema],
-  activity: [leadActivitySchema]
+  stageHistory: [stageHistorySchema]
 }, {
   timestamps: true
 });

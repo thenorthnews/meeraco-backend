@@ -6,9 +6,6 @@ import logger from '../../helpers/logger.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'meeraco-crm-super-secret-key-2026';
 
-// In-memory OTP storage for fast verification & expiry
-const otpStore = new Map();
-
 /**
  * 📲 Send OTP to registered mobile number
  */
@@ -171,7 +168,6 @@ export const verifyPhoneOtp = async (rawPhone, otp) => {
       role: roleName,
       roleId: isSuperAdmin ? 'admin' : user.roleId?._id?.toString(),
       branch: user.branchId ? { id: user.branchId._id, name: user.branchId.name, code: user.branchId.code } : null,
-      branchId: user.branchId?._id?.toString() || null,
       lastLoginAt: loginDate
     },
     token
@@ -300,15 +296,12 @@ export const getProfile = async (userId) => {
   const roleName = isSuperAdmin ? 'Admin' : (user.roleId?.name || 'User');
 
   return {
-    id: user._id.toString(),
+    _id: user._id.toString(),
     name: user.name,
     email: user.email,
     mobile: user.mobile,
-    phone: user.mobile,
     role: roleName,
-    roleId: isSuperAdmin ? 'admin' : user.roleId?._id?.toString(),
     branch: user.branchId ? { id: user.branchId._id, name: user.branchId.name, code: user.branchId.code } : null,
-    branchId: user.branchId?._id?.toString() || null,
     lastLoginAt: user.lastLoginAt || null
   };
 };
@@ -338,15 +331,17 @@ export const updateProfile = async (userId, data) => {
   }
 
   const roleName = isSuperAdmin ? 'Admin' : (user.roleId?.name || 'User');
+  const roleId = isSuperAdmin ? 'admin' : (user.roleId?._id?.toString() || user.roleId?.toString() || null);
 
   return {
     id: user._id.toString(),
+    _id: user._id.toString(),
     name: user.name,
     email: user.email,
     mobile: user.mobile,
-    phone: user.mobile,
     role: roleName,
-    roleId: isSuperAdmin ? 'admin' : user.roleId?._id?.toString(),
+    roleName: roleName,
+    roleId: roleId,
     branch: user.branchId ? { id: user.branchId._id, name: user.branchId.name, code: user.branchId.code } : null,
     branchId: user.branchId?._id?.toString() || null,
     lastLoginAt: user.lastLoginAt || null
